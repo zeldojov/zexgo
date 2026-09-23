@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -14,6 +13,9 @@ import (
 //go:embed templates
 var templateFS embed.FS
 
+//go:embed static
+var staticFS embed.FS
+
 var templateFuncs = template.FuncMap{
 	"upper": strings.ToUpper,
 }
@@ -21,6 +23,7 @@ var templateFuncs = template.FuncMap{
 var config = apppkg.Config{
 	Environment:   "development",
 	TemplatesPath: "templates",
+	StaticPath:    "static",
 }
 
 func main() {
@@ -31,7 +34,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	staticFiles, err := app.InitStatic(staticFS)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/static", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles))))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		data := struct {
@@ -57,6 +71,9 @@ func main() {
 		app.Render(w, "public/about", data)
 	})
 
-	fmt.Println("Server running at http://localhost:8080")
-	http.ListenAndServe(":8080", mux)
+	log.Println("Server running at http://localhost:8080")
+
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		log.Fatal(err)
+	}
 }

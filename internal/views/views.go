@@ -6,21 +6,16 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
-	"log"
 	"path"
 )
 
 var (
-	ErrInvalidTemplatePath = errors.New("invalid template path")
-	ErrTemplateWalk        = errors.New("template walk error")
-	ErrTemplateParse       = errors.New("template parse error")
+	ErrTemplateWalk  = errors.New("template walk error")
+	ErrTemplateParse = errors.New("template parse error")
 )
 
 type Views struct {
-	fsys      fs.FS
-	tmplPath  string
-	tmplFuncs template.FuncMap
-	tmpl      *template.Template
+	tmpl *template.Template
 }
 
 // region helpers
@@ -37,7 +32,6 @@ func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (*template.T
 			return nil
 		}
 
-		log.Println("Found template:", templatePath)
 		paths = append(paths, templatePath)
 		return nil
 	})
@@ -57,35 +51,10 @@ func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (*template.T
 	return tmpl, nil
 }
 
-func validateTemplatePath(fsys fs.FS, tmplPath string) error {
-	if tmplPath == "" {
-		return fmt.Errorf("%w: path is empty", ErrInvalidTemplatePath)
-	}
-
-	if !fs.ValidPath(tmplPath) {
-		return fmt.Errorf("%w %q: invalid format", ErrInvalidTemplatePath, tmplPath)
-	}
-
-	info, err := fs.Stat(fsys, tmplPath)
-	if err != nil {
-		return fmt.Errorf("%w %q: %w", ErrInvalidTemplatePath, tmplPath, err)
-	}
-
-	if !info.IsDir() {
-		return fmt.Errorf("%w %q: path is not a directory", ErrInvalidTemplatePath, tmplPath)
-	}
-
-	return nil
-}
-
 // endregion helpers
 // region API
 
 func NewViews(fsys fs.FS, tmplPath string, tmplFuncs template.FuncMap) (*Views, error) {
-
-	if err := validateTemplatePath(fsys, tmplPath); err != nil {
-		return nil, err
-	}
 
 	tmpl, err := loadViews(fsys, tmplPath, tmplFuncs)
 	if err != nil {
@@ -113,10 +82,7 @@ func NewViews(fsys fs.FS, tmplPath string, tmplFuncs template.FuncMap) (*Views, 
 	}
 
 	return &Views{
-		fsys:      fsys,
-		tmplPath:  tmplPath,
-		tmplFuncs: tmplFuncs,
-		tmpl:      tmpl,
+		tmpl: tmpl,
 	}, nil
 }
 
