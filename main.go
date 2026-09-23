@@ -4,86 +4,59 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
-	"io/fs"
-	"path"
+	"log"
+	"net/http"
 	"strings"
+
+	apppkg "github.com/zeldojov/zexgo/internal/app"
 )
 
 //go:embed templates
 var templateFS embed.FS
 
-type Templates struct {
-	pages map[string]*template.Template
+var templateFuncs = template.FuncMap{
+	"upper": strings.ToUpper,
 }
 
-type TemplateSets struct {
-	Public *Templates
-	Guest  *Templates
-	Auth   *Templates
+var config = apppkg.Config{
+	Environment:   "development",
+	TemplatesPath: "templates",
 }
 
 func main() {
-	fmt.Println("Hello, World!")
 
-	funcs := template.FuncMap{
-		"upper": strings.ToUpper,
+	app := apppkg.NewApp(config)
+
+	if err := app.InitViews(templateFS, templateFuncs); err != nil {
+		log.Fatal(err)
 	}
 
-	templates, err := loadTemplates(funcs)
-	if err != nil {
-		panic(err)
-	}
-}
+	mux := http.NewServeMux()
 
-func parseTemplateSet(name string, funcs template.FuncMap) (*Templates, error) {
-	basePath := fmt.Sprintf("templates/%s/base.html", name)
-	pagePattern := fmt.Sprintf("templates/%s/pages/*", name)
-
-	pagePaths, err := fs.Glob(templateFS, pagePattern)
-	if err != nil {
-		return nil, err
-	}
-
-	result := &Templates{
-		pages: make(map[string]*template.Template),
-	}
-
-	for _, pagePath := range pagePaths {
-		pageName := strings.TrimSuffix(path.Base(pagePath), path.Ext(pagePath))
-
-		tmpl, err := template.
-			New(pageName).
-			Funcs(funcs).
-			ParseFS(templateFS, basePath, pagePath)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", pagePath, err)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		data := struct {
+			Title string
+			Name  string
+		}{
+			Title: "Home",
+			Name:  "Željko",
 		}
 
-		result.pages[pageName] = tmpl
-	}
+		app.Render(w, "public/index", data)
+	})
 
-	return result, nil
-}
+	mux.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+		data := struct {
+			Title string
+			Name  string
+		}{
+			Title: "About",
+			Name:  "Željko",
+		}
 
-func loadTemplates(funcs template.FuncMap) (*TemplateSets, error) {
-	public, err := parseTemplateSet("public", funcs)
-	if err != nil {
-		return nil, err
-	}
+		app.Render(w, "public/about", data)
+	})
 
-	guest, err := parseTemplateSet("guest", funcs)
-	if err != nil {
-		return nil, err
-	}
-
-	auth, err := parseTemplateSet("auth", funcs)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TemplateSets{
-		Public: public,
-		Guest:  guest,
-		Auth:   auth,
-	}, nil
+	fmt.Println("Server running at http://localhost:8080")
+	http.ListenAndServe(":8080", mux)
 }
