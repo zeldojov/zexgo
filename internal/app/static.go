@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 )
 
 var (
@@ -42,15 +43,22 @@ func validateStaticPath(fsys fs.FS, staticPath string) error {
 	return VvalidateDirectoryPath(fsys, staticPath, ErrInvalidStaticPath)
 }
 
-func (a *App) InitStatic(fsys fs.FS) (fs.FS, error) {
+func (a *App) InitStatic(fsys fs.FS) error {
 	if err := validateStaticPath(fsys, a.Config.StaticPath); err != nil {
-		return nil, err
+		return err
 	}
 
 	staticFiles, err := fs.Sub(fsys, a.Config.StaticPath)
 	if err != nil {
-		return nil, fmt.Errorf("application failed to initialize static files: %w", err)
+		return fmt.Errorf("application failed to initialize static files: %w", err)
 	}
 
-	return filesOnlyFS{fsys: staticFiles}, nil
+	a.static = filesOnlyFS{fsys: staticFiles}
+	return nil
+}
+
+func (a *App) StaticHandler() http.Handler {
+	return http.StripPrefix("/static/",
+		http.FileServer(http.FS(a.static)),
+	)
 }

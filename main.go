@@ -34,18 +34,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	staticFiles, err := app.InitStatic(staticFS)
-	if err != nil {
+	if err := app.InitStatic(staticFS); err != nil {
 		log.Fatal(err)
 	}
-
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/static", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
 
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles))))
+	mux.Handle("/static/", app.StaticHandler())
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		data := struct {

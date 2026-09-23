@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"io/fs"
 
 	viewspkg "github.com/zeldojov/zexgo/internal/views"
 )
@@ -13,6 +14,7 @@ var (
 
 type App struct {
 	views  *viewspkg.Views
+	static fs.FS
 	Config Config
 	State  State
 }
