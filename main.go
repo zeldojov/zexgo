@@ -26,13 +26,12 @@ var config = apppkg.Config{
 
 func main() {
 
-	app := apppkg.NewApp(config)
-
-	if err := app.InitViews(templateFS, templateFuncs); err != nil {
+	app, err := apppkg.NewApp(config, staticFS, templateFS, templateFuncs)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := app.InitStatic(staticFS); err != nil {
+	if err := app.Middleware("allow-methods", apppkg.AllowMethods); err != nil {
 		log.Fatal(err)
 	}
 

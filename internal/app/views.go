@@ -3,36 +3,16 @@ package app
 import (
 	"bytes"
 	"errors"
-	"fmt"
-	"html/template"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
-
-	viewspkg "github.com/zeldojov/zexgo/internal/views"
 )
 
 // region helpers
 // endregion helpers
 // region API
 
-func (a *App) InitViews(fsys fs.FS, funcs template.FuncMap) error {
-
-	if err := ValidateDirectoryPath(fsys, templatesPath); err != nil {
-		return fmt.Errorf("%q: %w", "invalid templates path", err)
-	}
-
-	views, err := viewspkg.New(fsys, templatesPath, funcs)
-	if err != nil {
-		return fmt.Errorf("application failed to initialize views: %w", err)
-	}
-
-	a.views = views
-	return nil
-}
-
-func (a *App) Render(w http.ResponseWriter, name string, data any) {
+func (a *application) Render(w http.ResponseWriter, name string, data any) {
 	var buf bytes.Buffer
 
 	if a.views == nil {
