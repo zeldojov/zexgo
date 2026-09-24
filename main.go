@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	apppkg "github.com/zeldojov/zexgo/internal/app"
 )
@@ -28,10 +29,6 @@ func main() {
 
 	app, err := apppkg.NewApp(config, staticFS, templateFS, templateFuncs)
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := app.Middleware("allow-methods", apppkg.AllowMethods); err != nil {
 		log.Fatal(err)
 	}
 
@@ -66,7 +63,18 @@ func main() {
 
 	log.Println("Server running at http://localhost:8080")
 
-	if err := http.ListenAndServe(":8080", handler); err != nil {
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: handler,
+
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
