@@ -37,6 +37,7 @@ func main() {
 	if err := app.InitStatic(staticFS); err != nil {
 		log.Fatal(err)
 	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/static", func(w http.ResponseWriter, r *http.Request) {

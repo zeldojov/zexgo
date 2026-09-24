@@ -1,15 +1,9 @@
 package app
 
 import (
-	"errors"
 	"io/fs"
 
 	viewspkg "github.com/zeldojov/zexgo/internal/views"
-)
-
-var (
-	ErrTemplateRender = errors.New("template render error")
-	ErrTemplateWrite  = errors.New("template write error")
 )
 
 type App struct {

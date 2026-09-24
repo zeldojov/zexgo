@@ -5,55 +5,30 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+
+	staticfspkg "github.com/zeldojov/zexgo/internal/staticfs"
 )
 
 var (
 	ErrInvalidStaticPath = errors.New("invalid static path")
+	ErrInitStaticFS      = errors.New("failed to initialize static FS")
 )
 
-type filesOnlyFS struct {
-	fsys fs.FS
-}
+// region FS
 
-func (f filesOnlyFS) Open(name string) (fs.File, error) {
-	if name == "." || !fs.ValidPath(name) {
-		return nil, fs.ErrNotExist
-	}
-
-	file, err := f.fsys.Open(name)
-	if err != nil {
-		return nil, err
-	}
-
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, err
-	}
-
-	if info.IsDir() {
-		file.Close()
-		return nil, fs.ErrNotExist
-	}
-
-	return file, nil
-}
-
-func validateStaticPath(fsys fs.FS, staticPath string) error {
-	return VvalidateDirectoryPath(fsys, staticPath, ErrInvalidStaticPath)
-}
+// endregion FS
 
 func (a *App) InitStatic(fsys fs.FS) error {
-	if err := validateStaticPath(fsys, a.Config.StaticPath); err != nil {
-		return err
+	if err := ValidateDirectoryPath(fsys, a.Config.StaticPath); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidStaticPath, err)
 	}
 
-	staticFiles, err := fs.Sub(fsys, a.Config.StaticPath)
+	staticFiles, err := staticfspkg.New(fsys, a.Config.StaticPath)
 	if err != nil {
-		return fmt.Errorf("application failed to initialize static files: %w", err)
+		return fmt.Errorf("%w: %w", ErrInitStaticFS, err)
 	}
 
-	a.static = filesOnlyFS{fsys: staticFiles}
+	a.static = staticFiles
 	return nil
 }
 

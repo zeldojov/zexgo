@@ -54,7 +54,7 @@ func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (*template.T
 // endregion helpers
 // region API
 
-func NewViews(fsys fs.FS, tmplPath string, tmplFuncs template.FuncMap) (*Views, error) {
+func New(fsys fs.FS, tmplPath string, tmplFuncs template.FuncMap) (*Views, error) {
 
 	tmpl, err := loadViews(fsys, tmplPath, tmplFuncs)
 	if err != nil {

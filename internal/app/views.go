@@ -15,13 +15,11 @@ import (
 
 var (
 	ErrInvalidTemplatePath = errors.New("invalid template path")
+	ErrTemplateRender      = errors.New("template render error")
+	ErrTemplateWrite       = errors.New("template write error")
 )
 
 // region helpers
-
-func validateTemplatePath(fsys fs.FS, tmplPath string) error {
-	return VvalidateDirectoryPath(fsys, tmplPath, ErrInvalidTemplatePath)
-}
 
 func (a *App) renderWithStatus(w http.ResponseWriter, name string, data any, statusCode int) error {
 	var buf bytes.Buffer
@@ -59,11 +57,11 @@ func handleRenderError(w http.ResponseWriter, err error, fallbackStatus int) {
 
 func (a *App) InitViews(fsys fs.FS, funcs template.FuncMap) error {
 
-	if err := validateTemplatePath(fsys, a.Config.TemplatesPath); err != nil {
-		return err
+	if err := ValidateDirectoryPath(fsys, a.Config.TemplatesPath); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidTemplatePath, err)
 	}
 
-	views, err := viewspkg.NewViews(fsys, a.Config.TemplatesPath, funcs)
+	views, err := viewspkg.New(fsys, a.Config.TemplatesPath, funcs)
 	if err != nil {
 		return fmt.Errorf("application failed to initialize views: %w", err)
 	}
