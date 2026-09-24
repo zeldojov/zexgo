@@ -37,7 +37,7 @@ func New(fsys fs.FS, staticPath string) (fs.FS, error) {
 	staticFiles, err := fs.Sub(fsys, staticPath)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"failed to initialize static files from %q: %w",
+			"can not create static FS from %q: %w",
 			staticPath,
 			err,
 		)

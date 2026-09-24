@@ -1,39 +1,38 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
-	"net/http"
 
 	staticfspkg "github.com/zeldojov/zexgo/internal/staticfs"
-)
-
-var (
-	ErrInvalidStaticPath = errors.New("invalid static path")
-	ErrInitStaticFS      = errors.New("failed to initialize static FS")
 )
 
 // region FS
 
 // endregion FS
 
+func validateStaticPath(fsys fs.FS, staticPath string) error {
+	if err := ValidateDirectoryPath(fsys, staticPath); err != nil {
+		return fmt.Errorf("%q: %w", "invalid static path", err)
+	}
+	return nil
+}
+
 func (a *App) InitStatic(fsys fs.FS) error {
-	if err := ValidateDirectoryPath(fsys, a.Config.StaticPath); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidStaticPath, err)
+
+	if a.views == nil {
+		return fmt.Errorf("%q", "views not initialized")
 	}
 
-	staticFiles, err := staticfspkg.New(fsys, a.Config.StaticPath)
+	if err := validateStaticPath(fsys, staticPath); err != nil {
+		return fmt.Errorf("%q: %w", "failed to initialize static FS", err)
+	}
+
+	staticFiles, err := staticfspkg.New(fsys, staticPath)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrInitStaticFS, err)
+		return fmt.Errorf("%q: %w", "failed to initialize static FS", err)
 	}
 
 	a.static = staticFiles
 	return nil
-}
-
-func (a *App) StaticHandler() http.Handler {
-	return http.StripPrefix("/static/",
-		http.FileServer(http.FS(a.static)),
-	)
 }

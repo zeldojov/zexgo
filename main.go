@@ -21,9 +21,7 @@ var templateFuncs = template.FuncMap{
 }
 
 var config = apppkg.Config{
-	Environment:   "development",
-	TemplatesPath: "templates",
-	StaticPath:    "static",
+	Environment: "development",
 }
 
 func main() {
@@ -38,15 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/static", func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	})
-
-	mux.Handle("/static/", app.StaticHandler())
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	app.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		data := struct {
 			Title string
 			Name  string
@@ -58,7 +48,7 @@ func main() {
 		app.Render(w, "public/index", data)
 	})
 
-	mux.HandleFunc("/about", func(w http.ResponseWriter, r *http.Request) {
+	app.HandleFunc("GET /about", func(w http.ResponseWriter, r *http.Request) {
 		data := struct {
 			Title string
 			Name  string
@@ -70,9 +60,14 @@ func main() {
 		app.Render(w, "public/about", data)
 	})
 
+	handler, err := app.Handler()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Println("Server running at http://localhost:8080")
 
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := http.ListenAndServe(":8080", handler); err != nil {
 		log.Fatal(err)
 	}
 }
