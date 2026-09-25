@@ -21,78 +21,254 @@ type Views struct {
 
 // region helpers
 
-func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (map[string]*template.Template, error) {
-	var paths []string
-
-	err := fs.WalkDir(fsys, tmplPath, func(templatePath string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if entry.IsDir() || path.Ext(templatePath) != ".html" {
-			return nil
-		}
-
-		paths = append(paths, templatePath)
-		return nil
-	})
+func validateLayoutsDir(fsys fs.FS, layoutsPath string) ([]fs.DirEntry, error) {
+	info, err := fs.Stat(fsys, layoutsPath)
 	if err != nil {
-		return nil, fmt.Errorf("%w under %q: %w", ErrTemplateWalk, tmplPath, err)
+		return nil, fmt.Errorf("layouts directory %q: %w", layoutsPath, err)
 	}
 
-	layoutTemplates := make(map[string]*template.Template)
-	templates := make(map[string]*template.Template)
+	if !info.IsDir() {
+		return nil, fmt.Errorf("layouts path %q is not a directory", layoutsPath)
+	}
 
-	for _, pagePath := range paths {
-		pageDir := path.Dir(pagePath)
+	entries, err := fs.ReadDir(fsys, layoutsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %q: %w", layoutsPath, err)
+	}
 
-		// Fajlovi direktno u templates/ su layout fajlovi.
-		if pageDir == tmplPath {
+	return entries, nil
+}
+
+func validatePagesDirs(fsys fs.FS, pagesPath string, layouts map[string]*template.Template) error {
+	info, err := fs.Stat(fsys, pagesPath)
+	if err != nil {
+		return fmt.Errorf("pages directory %q: %w", pagesPath, err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("pages path %q is not a directory", pagesPath)
+	}
+
+	entries, err := fs.ReadDir(fsys, pagesPath)
+	if err != nil {
+		return fmt.Errorf("failed to read %q: %w", pagesPath, err)
+	}
+
+	for layoutName := range layouts {
+		layoutPagesPath := path.Join(
+			pagesPath,
+			layoutName,
+		)
+
+		info, err := fs.Stat(fsys, layoutPagesPath)
+		if err != nil {
+			return fmt.Errorf("pages directory for layout %q is missing: %w", layoutName, err)
+		}
+
+		if !info.IsDir() {
+			return fmt.Errorf("pages path for layout %q is not a directory", layoutName)
+		}
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			return fmt.Errorf("unexpected file in pages directory: %q", entry.Name())
+		}
+
+		if _, ok := layouts[entry.Name()]; !ok {
+			return fmt.Errorf("no layout found for pages directory %q", entry.Name())
+		}
+	}
+
+	return nil
+}
+
+func loadLayouts(fsys fs.FS, layoutsPath string, entries []fs.DirEntry, funcs template.FuncMap) (map[string]*template.Template, error) {
+
+	layouts := make(map[string]*template.Template)
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return nil, fmt.Errorf("layouts directory must be flat: %q", path.Join(layoutsPath, entry.Name()))
+		}
+
+		if path.Ext(entry.Name()) != ".html" {
 			continue
 		}
 
-		layoutName := path.Base(pageDir)
-		layoutPath := path.Join(tmplPath, layoutName+".html")
+		layoutName := strings.TrimSuffix(
+			entry.Name(),
+			path.Ext(entry.Name()),
+		)
 
-		layoutTmpl, ok := layoutTemplates[layoutName]
-		if !ok {
-			if _, err := fs.Stat(fsys, layoutPath); err != nil {
-				return nil, fmt.Errorf(
-					"required layout %q: %w",
-					layoutPath,
+		layoutPath := path.Join(layoutsPath, entry.Name())
+
+		layoutTmpl, err := template.New("layout").Funcs(funcs).ParseFS(fsys, layoutPath)
+		if err != nil {
+			return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, layoutPath, err)
+		}
+
+		if layoutTmpl.Lookup("layout") == nil {
+			return nil, fmt.Errorf("template %q is not defined in %q", "layout", layoutPath)
+		}
+
+		layouts[layoutName] = layoutTmpl
+	}
+
+	if len(layouts) == 0 {
+		return nil, fmt.Errorf("no layouts found under %q", layoutsPath)
+	}
+
+	return layouts, nil
+}
+
+func relativeFSPath(root, target string) (string, error) {
+	root = strings.TrimSuffix(root, "/")
+	prefix := root + "/"
+
+	if !strings.HasPrefix(target, prefix) {
+		return "", fmt.Errorf(
+			"path %q is outside root %q",
+			target,
+			root,
+		)
+	}
+
+	relativePath := strings.TrimPrefix(target, prefix)
+	if relativePath == "" {
+		return "", fmt.Errorf(
+			"path %q has no relative part under %q",
+			target,
+			root,
+		)
+	}
+
+	return relativePath, nil
+}
+
+func loadPages(fsys fs.FS, pagesPath string, layouts map[string]*template.Template) (map[string]*template.Template, error) {
+
+	templates := make(map[string]*template.Template)
+	pageCounts := make(map[string]int)
+
+	err := fs.WalkDir(
+		fsys,
+		pagesPath,
+		func(pagePath string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if entry.IsDir() || path.Ext(pagePath) != ".html" {
+				return nil
+			}
+
+			relativePath, err := relativeFSPath(pagesPath, pagePath)
+			if err != nil {
+				return err
+			}
+
+			parts := strings.Split(relativePath, "/")
+			if len(parts) < 2 {
+				return fmt.Errorf(
+					"page must be inside a layout directory: %q",
+					pagePath,
+				)
+			}
+
+			layoutName := parts[0]
+			layoutTmpl, ok := layouts[layoutName]
+			if !ok {
+				return fmt.Errorf(
+					"no layout found for page %q",
+					pagePath,
+				)
+			}
+
+			pageTmpl, err := layoutTmpl.Clone()
+			if err != nil {
+				return fmt.Errorf(
+					"%w while cloning layout %q: %w",
+					ErrTemplateParse,
+					layoutName,
 					err,
 				)
 			}
 
-			layoutTmpl, err = template.
-				New("layout").
-				Funcs(funcs).
-				ParseFS(fsys, layoutPath)
-			if err != nil {
-				return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, layoutPath, err)
+			if _, err := pageTmpl.ParseFS(fsys, pagePath); err != nil {
+				return fmt.Errorf(
+					"%w under %q: %w",
+					ErrTemplateParse,
+					pagePath,
+					err,
+				)
 			}
 
-			layoutTemplates[layoutName] = layoutTmpl
-		}
+			if pageTmpl.Lookup("content") == nil {
+				return fmt.Errorf(
+					"page %q does not define %q",
+					pagePath,
+					"content",
+				)
+			}
 
-		pageTmpl, err := layoutTmpl.Clone()
-		if err != nil {
-			return nil, fmt.Errorf("%w while cloning layout %q: %w", ErrTemplateParse, layoutName, err)
-		}
+			pageName := strings.TrimSuffix(
+				relativePath,
+				path.Ext(relativePath),
+			)
 
-		if _, err := pageTmpl.ParseFS(fsys, pagePath); err != nil {
-			return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, pagePath, err)
-		}
+			if _, exists := templates[pageName]; exists {
+				return fmt.Errorf(
+					"duplicate page template %q",
+					pageName,
+				)
+			}
 
-		pageName := path.Join(
-			layoutName,
-			strings.TrimSuffix(path.Base(pagePath), path.Ext(pagePath)),
+			templates[pageName] = pageTmpl
+			pageCounts[layoutName]++
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"%w under %q: %w",
+			ErrTemplateWalk,
+			pagesPath,
+			err,
 		)
+	}
 
-		templates[pageName] = pageTmpl
+	for layoutName := range layouts {
+		if pageCounts[layoutName] == 0 {
+			return nil, fmt.Errorf(
+				"no page templates found for layout %q",
+				layoutName,
+			)
+		}
 	}
 
 	return templates, nil
+}
+
+func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (map[string]*template.Template, error) {
+	layoutsPath := path.Join(tmplPath, "layouts")
+	pagesPath := path.Join(tmplPath, "pages")
+
+	layoutEntries, err := validateLayoutsDir(fsys, layoutsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	layouts, err := loadLayouts(fsys, layoutsPath, layoutEntries, funcs)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validatePagesDirs(fsys, pagesPath, layouts); err != nil {
+		return nil, err
+	}
+
+	return loadPages(fsys, pagesPath, layouts)
 }
 
 // endregion helpers
@@ -108,7 +284,7 @@ func New(fsys fs.FS, tmplPath string, tmplFuncs template.FuncMap) (*Views, error
 }
 
 func (v *Views) ExecuteTemplate(w io.Writer, name string, data any) error {
-	if v == nil {
+	if v == nil || v.templates == nil {
 		return errors.New("views are not initialized")
 	}
 
@@ -125,11 +301,11 @@ func (v *Views) ExecuteTemplate(w io.Writer, name string, data any) error {
 		return fmt.Errorf("template %q is not registered", name)
 	}
 
-	if tmpl.Lookup(name) == nil {
-		return fmt.Errorf("template %q is not defined", name)
+	if tmpl.Lookup("layout") == nil {
+		return errors.New(`template "layout" is not defined`)
 	}
 
-	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
 		return fmt.Errorf("failed to execute template %q: %w", name, err)
 	}
 
