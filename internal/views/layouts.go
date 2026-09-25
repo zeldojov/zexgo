@@ -43,7 +43,8 @@ func loadLayouts(fsys fs.FS, layoutsPath, partialsPath string, funcs template.Fu
 			return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, layoutPath, err)
 		}
 
-		if layoutTmpl.Lookup("layout") == nil {
+		layoutDefinition := layoutTmpl.Lookup("layout")
+		if layoutDefinition == nil || layoutDefinition.Tree == nil {
 			return nil, fmt.Errorf("template %q is not defined in %q", "layout", layoutPath)
 		}
 

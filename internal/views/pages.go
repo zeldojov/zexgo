@@ -66,6 +66,10 @@ func loadPages(fsys fs.FS, pagesPath string, layoutName string, layoutTmpl *temp
 
 		pageName := path.Join(layoutName, strings.TrimSuffix(relativePath, path.Ext(relativePath)))
 
+		if _, exists := templates[pageName]; exists {
+			return fmt.Errorf("duplicate page template %q under %q", pageName, pagesPath)
+		}
+
 		templates[pageName] = pageTmpl
 		return nil
 	})
