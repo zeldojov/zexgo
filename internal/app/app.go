@@ -29,6 +29,12 @@ type (
 		Environment string
 	}
 
+	errorPageData struct {
+		Title   string
+		Code    int
+		Message string
+	}
+
 	application struct {
 		views  *viewspkg.Views
 		static fs.FS
@@ -76,18 +82,31 @@ func NewApp(config Config, staticFS fs.FS, templatesFS fs.FS, funcs template.Fun
 		Config: config,
 
 		staticHandler: http.StripPrefix("/"+staticPath+"/", http.FileServer(http.FS(staticFiles))),
+		middlewares:   []registeredMiddleware{},
+	}
 
-		NotFoundError: func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		},
-		InternalServerError: func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		},
-		MethodNotAllowedError: func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		},
+	app.NotFoundError = func(w http.ResponseWriter, r *http.Request) {
+		app.RenderStatus(w, http.StatusNotFound, "public/errors/404", errorPageData{
+			Title:   "Page not found",
+			Code:    http.StatusNotFound,
+			Message: http.StatusText(http.StatusNotFound),
+		})
+	}
 
-		middlewares: []registeredMiddleware{},
+	app.InternalServerError = func(w http.ResponseWriter, r *http.Request) {
+		app.RenderStatus(w, http.StatusInternalServerError, "public/errors/500", errorPageData{
+			Title:   "Internal server error",
+			Code:    http.StatusInternalServerError,
+			Message: http.StatusText(http.StatusInternalServerError),
+		})
+	}
+
+	app.MethodNotAllowedError = func(w http.ResponseWriter, r *http.Request) {
+		app.RenderStatus(w, http.StatusMethodNotAllowed, "public/errors/405", errorPageData{
+			Title:   "Method not allowed",
+			Code:    http.StatusMethodNotAllowed,
+			Message: http.StatusText(http.StatusMethodNotAllowed),
+		})
 	}
 
 	app.middlewares = append(app.middlewares, registeredMiddleware{

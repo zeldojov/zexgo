@@ -12,6 +12,10 @@ import (
 // region API
 
 func (a *application) Render(w http.ResponseWriter, name string, data any) {
+	a.RenderStatus(w, http.StatusOK, name, data)
+}
+
+func (a *application) RenderStatus(w http.ResponseWriter, status int, name string, data any) {
 	var buf bytes.Buffer
 
 	// a and a.views is guaranteed to be initialized by the constructor.
@@ -23,7 +27,7 @@ func (a *application) Render(w http.ResponseWriter, name string, data any) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 
 	if _, err := io.Copy(w, &buf); err != nil {
 		log.Printf("template response write failed: %q: %v", name, err)

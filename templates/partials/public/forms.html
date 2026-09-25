@@ -1,0 +1,13 @@
+{{define "contact-form"}}
+<form method="post" action="/contact">
+    <label>
+        Email
+        <input type="email" name="email" required>
+    </label>
+    <label>
+        Message
+        <textarea name="message" required></textarea>
+    </label>
+    <button type="submit">Send</button>
+</form>
+{{end}}

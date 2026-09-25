@@ -2,7 +2,7 @@ package app
 
 import "net/http"
 
-func AllowMethods(_ *application) Middleware {
+func AllowMethods(app *application) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
@@ -10,7 +10,7 @@ func AllowMethods(_ *application) Middleware {
 				next.ServeHTTP(w, r)
 			default:
 				w.Header().Set("Allow", "GET, HEAD, POST")
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				app.MethodNotAllowedError(w, r)
 			}
 		})
 	}
