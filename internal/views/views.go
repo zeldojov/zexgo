@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"strings"
 )
 
 var (
@@ -15,20 +16,20 @@ var (
 )
 
 type Views struct {
-	tmpl *template.Template
+	templates map[string]*template.Template
 }
 
 // region helpers
 
-func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (*template.Template, error) {
+func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (map[string]*template.Template, error) {
 	var paths []string
 
-	err := fs.WalkDir(fsys, tmplPath, func(templatePath string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, tmplPath, func(templatePath string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if d.IsDir() || path.Ext(templatePath) != ".html" {
+		if entry.IsDir() || path.Ext(templatePath) != ".html" {
 			return nil
 		}
 
@@ -37,57 +38,102 @@ func loadViews(fsys fs.FS, tmplPath string, funcs template.FuncMap) (*template.T
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w under %q: %w", ErrTemplateWalk, tmplPath, err)
-
 	}
 
-	tmpl, err := template.
-		New("views").
-		Funcs(funcs).
-		ParseFS(fsys, paths...)
-	if err != nil {
-		return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, tmplPath, err)
+	layoutTemplates := make(map[string]*template.Template)
+	templates := make(map[string]*template.Template)
+
+	for _, pagePath := range paths {
+		pageDir := path.Dir(pagePath)
+
+		// Fajlovi direktno u templates/ su layout fajlovi.
+		if pageDir == tmplPath {
+			continue
+		}
+
+		layoutName := path.Base(pageDir)
+		layoutPath := path.Join(tmplPath, layoutName+".html")
+
+		layoutTmpl, ok := layoutTemplates[layoutName]
+		if !ok {
+			if _, err := fs.Stat(fsys, layoutPath); err != nil {
+				return nil, fmt.Errorf(
+					"required layout %q: %w",
+					layoutPath,
+					err,
+				)
+			}
+
+			layoutTmpl, err = template.
+				New("layout").
+				Funcs(funcs).
+				ParseFS(fsys, layoutPath)
+			if err != nil {
+				return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, layoutPath, err)
+			}
+
+			layoutTemplates[layoutName] = layoutTmpl
+		}
+
+		pageTmpl, err := layoutTmpl.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("%w while cloning layout %q: %w", ErrTemplateParse, layoutName, err)
+		}
+
+		if _, err := pageTmpl.ParseFS(fsys, pagePath); err != nil {
+			return nil, fmt.Errorf("%w under %q: %w", ErrTemplateParse, pagePath, err)
+		}
+
+		pageName := path.Join(
+			layoutName,
+			strings.TrimSuffix(path.Base(pagePath), path.Ext(pagePath)),
+		)
+
+		templates[pageName] = pageTmpl
 	}
 
-	return tmpl, nil
+	return templates, nil
 }
 
 // endregion helpers
 // region API
 
 func New(fsys fs.FS, tmplPath string, tmplFuncs template.FuncMap) (*Views, error) {
-
-	tmpl, err := loadViews(fsys, tmplPath, tmplFuncs)
+	templates, err := loadViews(fsys, tmplPath, tmplFuncs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load templates from %q: %w", tmplPath, err)
 	}
 
-	required := []struct {
-		filename     string
-		templateName string
-	}{
-		{"internalServerError.html", "errors/internalServerError"},
-		{"notFound.html", "errors/notFound"},
-	}
-
-	for _, item := range required {
-		templatePath := path.Join(tmplPath, "errors", item.filename)
-
-		if _, err := fs.Stat(fsys, templatePath); err != nil {
-			return nil, fmt.Errorf("required error template %q: %w", templatePath, err)
-		}
-
-		if tmpl.Lookup(item.templateName) == nil {
-			return nil, fmt.Errorf("required template %q is not defined in %q", item.templateName, templatePath)
-		}
-	}
-
-	return &Views{
-		tmpl: tmpl,
-	}, nil
+	return &Views{templates: templates}, nil
 }
 
 func (v *Views) ExecuteTemplate(w io.Writer, name string, data any) error {
-	return v.tmpl.ExecuteTemplate(w, name, data)
+	if v == nil {
+		return errors.New("views are not initialized")
+	}
+
+	if w == nil {
+		return errors.New("template writer is nil")
+	}
+
+	if name == "" {
+		return errors.New("template name is empty")
+	}
+
+	tmpl, ok := v.templates[name]
+	if !ok {
+		return fmt.Errorf("template %q is not registered", name)
+	}
+
+	if tmpl.Lookup(name) == nil {
+		return fmt.Errorf("template %q is not defined", name)
+	}
+
+	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
+		return fmt.Errorf("failed to execute template %q: %w", name, err)
+	}
+
+	return nil
 }
 
 // endregion API

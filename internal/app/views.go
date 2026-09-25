@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -15,17 +14,11 @@ import (
 func (a *application) Render(w http.ResponseWriter, name string, data any) {
 	var buf bytes.Buffer
 
-	if a.views == nil {
-		err := errors.New("views not initialized")
-
-		log.Printf("template render failed: %q: %v", name, err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
+	// a and a.views is guaranteed to be initialized by the constructor.
 
 	if err := a.views.ExecuteTemplate(&buf, name, data); err != nil {
 		log.Printf("template render failed: %q: %v", name, err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		a.InternalServerError(w, nil)
 		return
 	}
 

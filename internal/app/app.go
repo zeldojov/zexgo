@@ -36,11 +36,11 @@ type (
 		mux    *http.ServeMux
 		Config Config
 
-		staticHandler              http.Handler
-		NotFoundHandler            http.HandlerFunc
-		InternalServerErrorHandler http.HandlerFunc
-		MethodNotAllowedHandler    http.HandlerFunc
-		middlewares                []registeredMiddleware
+		staticHandler         http.Handler
+		NotFoundError         http.HandlerFunc
+		InternalServerError   http.HandlerFunc
+		MethodNotAllowedError http.HandlerFunc
+		middlewares           []registeredMiddleware
 	}
 )
 
@@ -75,10 +75,17 @@ func NewApp(config Config, staticFS fs.FS, templatesFS fs.FS, funcs template.Fun
 		mux:    http.NewServeMux(),
 		Config: config,
 
-		staticHandler:              http.StripPrefix("/"+staticPath+"/", http.FileServer(http.FS(staticFiles))),
-		NotFoundHandler:            NotFoundError,
-		InternalServerErrorHandler: InternalServerError,
-		MethodNotAllowedHandler:    MethodNotAllowedError,
+		staticHandler: http.StripPrefix("/"+staticPath+"/", http.FileServer(http.FS(staticFiles))),
+
+		NotFoundError: func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		},
+		InternalServerError: func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		},
+		MethodNotAllowedError: func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		},
 
 		middlewares: []registeredMiddleware{},
 	}
@@ -99,9 +106,9 @@ func (a *application) Handler() (http.Handler, error) {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/static/", a.MethodNotAllowedHandler)
-	mux.HandleFunc("/static", a.MethodNotAllowedHandler)
-	mux.HandleFunc("GET /static", a.NotFoundHandler)
+	mux.HandleFunc("/static/", a.MethodNotAllowedError)
+	mux.HandleFunc("/static", a.MethodNotAllowedError)
+	mux.HandleFunc("GET /static", a.NotFoundError)
 	mux.Handle("GET /static/", a.staticHandler)
 
 	// Sve ostale rute prosleđujemo main mux-u.
