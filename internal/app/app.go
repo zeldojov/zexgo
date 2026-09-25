@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"net/http"
 	"slices"
@@ -35,8 +36,12 @@ type (
 		Message string
 	}
 
+	renderer interface {
+		ExecuteTemplate(io.Writer, string, any) error
+	}
+
 	application struct {
-		views  *viewspkg.Views
+		views  renderer
 		static fs.FS
 
 		mux    *http.ServeMux
@@ -59,9 +64,6 @@ func NewApp(config Config, staticFS fs.FS, templatesFS fs.FS, funcs template.Fun
 
 	if err := ValidateDirectoryPath(staticFS, staticPath); err != nil {
 		return nil, fmt.Errorf("%q: %w", "invalid static path", err)
-	}
-	if err := ValidateDirectoryPath(templatesFS, templatesPath); err != nil {
-		return nil, fmt.Errorf("%q: %w", "invalid templates path", err)
 	}
 
 	staticFiles, err := staticfspkg.New(staticFS, staticPath)
