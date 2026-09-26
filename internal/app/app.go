@@ -9,7 +9,11 @@ import (
 	"net/http"
 	"slices"
 
+	"github.com/zeldojov/zexgo/internal/email"
+	"github.com/zeldojov/zexgo/internal/handlers"
+	"github.com/zeldojov/zexgo/internal/middleware"
 	staticfspkg "github.com/zeldojov/zexgo/internal/staticfs"
+	"github.com/zeldojov/zexgo/internal/store"
 	viewspkg "github.com/zeldojov/zexgo/internal/views"
 )
 
@@ -41,17 +45,18 @@ type (
 	}
 
 	application struct {
+		store   *store.Store
+		email   *email.Service
+		handler *handlers.Handler
+
 		views  renderer
 		static fs.FS
-
 		mux    *http.ServeMux
+
 		Config Config
 
-		staticHandler         http.Handler
-		NotFoundError         http.HandlerFunc
-		InternalServerError   http.HandlerFunc
-		MethodNotAllowedError http.HandlerFunc
-		middlewares           []registeredMiddleware
+		staticHandler http.Handler
+		middlewares   []registeredMiddleware
 	}
 )
 
@@ -87,34 +92,18 @@ func NewApp(config Config, staticFS fs.FS, templatesFS fs.FS, funcs template.Fun
 		middlewares:   []registeredMiddleware{},
 	}
 
-	app.NotFoundError = func(w http.ResponseWriter, r *http.Request) {
-		app.RenderStatus(w, http.StatusNotFound, "public/errors/404", errorPageData{
-			Title:   "Page not found",
-			Code:    http.StatusNotFound,
-			Message: http.StatusText(http.StatusNotFound),
-		})
-	}
+	app.handler = handlers.NewHandler(
+		app.store,
+		app.email,
+		app.views,
+		http.HandlerFunc(app.InternalServerError),
+	)
 
-	app.InternalServerError = func(w http.ResponseWriter, r *http.Request) {
-		app.RenderStatus(w, http.StatusInternalServerError, "public/errors/500", errorPageData{
-			Title:   "Internal server error",
-			Code:    http.StatusInternalServerError,
-			Message: http.StatusText(http.StatusInternalServerError),
-		})
+	if err := app.Middleware("allow-methods", func(app *application) Middleware {
+		return Middleware(middleware.NewAllowedMethods(app.MethodNotAllowed))
+	}); err != nil {
+		return nil, err
 	}
-
-	app.MethodNotAllowedError = func(w http.ResponseWriter, r *http.Request) {
-		app.RenderStatus(w, http.StatusMethodNotAllowed, "public/errors/405", errorPageData{
-			Title:   "Method not allowed",
-			Code:    http.StatusMethodNotAllowed,
-			Message: http.StatusText(http.StatusMethodNotAllowed),
-		})
-	}
-
-	app.middlewares = append(app.middlewares, registeredMiddleware{
-		name:       "allow-methods",
-		middleware: AllowMethods(app),
-	})
 
 	return app, nil
 }
@@ -127,9 +116,9 @@ func (a *application) Handler() (http.Handler, error) {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/static/", a.MethodNotAllowedError)
-	mux.HandleFunc("/static", a.MethodNotAllowedError)
-	mux.HandleFunc("GET /static", a.NotFoundError)
+	mux.HandleFunc("/static/", a.MethodNotAllowed)
+	mux.HandleFunc("/static", a.MethodNotAllowed)
+	mux.HandleFunc("GET /static", a.NotFound)
 	mux.Handle("GET /static/", a.staticHandler)
 
 	// Sve ostale rute prosleđujemo main mux-u.
@@ -158,10 +147,6 @@ func (a *application) Middleware(
 ) error {
 	if name == "" {
 		return errors.New("middleware name is empty")
-	}
-
-	if name == "allow-methods" {
-		return errors.New("middleware name is reserved")
 	}
 
 	if factory == nil {

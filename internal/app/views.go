@@ -22,7 +22,7 @@ func (a *application) RenderStatus(w http.ResponseWriter, status int, name strin
 
 	if err := a.views.ExecuteTemplate(&buf, name, data); err != nil {
 		log.Printf("template render failed: %q: %v", name, err)
-		a.InternalServerError(w, nil)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
