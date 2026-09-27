@@ -23,33 +23,4 @@
 
     <p>No account? <a href="/register">Register</a></p>
 </section>
-{{end}}{{define "content"}}
-<section>
-    <h1>Login</h1>
-
-    {{if .Error}}
-        <p role="alert">{{.Error}}</p>
-    {{end}}
-
-    <form method="post" action="/login">
-        <label>
-            Username
-            <input type="text" name="username" required>
-        </label>
-
-        <label>
-            Password
-            <input type="password" name="password" required>
-        </label>
-
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-
-        <button type="submit">Login</button>
-    </form>
-
-    <p>
-        No account?
-        <a href="/register">Register</a>
-    </p>
-</section>
 {{end}}

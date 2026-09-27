@@ -10,8 +10,6 @@ import (
 	"slices"
 
 	"github.com/zeldojov/zexgo/internal/email"
-	"github.com/zeldojov/zexgo/internal/handlers"
-	"github.com/zeldojov/zexgo/internal/middleware"
 	staticfspkg "github.com/zeldojov/zexgo/internal/staticfs"
 	"github.com/zeldojov/zexgo/internal/store"
 	viewspkg "github.com/zeldojov/zexgo/internal/views"
@@ -32,6 +30,16 @@ type (
 
 	Config struct {
 		Environment string
+		Database    DatabaseConfig
+	}
+
+	DatabaseConfig struct {
+		Username string
+		Password string
+		Address  string
+		Port     string
+		Name     string
+		Options  store.DBConfig
 	}
 
 	errorPageData struct {
@@ -45,9 +53,8 @@ type (
 	}
 
 	application struct {
-		store   *store.Store
-		email   *email.Service
-		handler *handlers.Handler
+		store *store.Store
+		email *email.Service
 
 		views  renderer
 		static fs.FS
@@ -61,6 +68,33 @@ type (
 )
 
 // region helpers
+
+func initializeStore(config DatabaseConfig) (*store.Store, error) {
+	dbOptions := config.Options
+	if dbOptions == (store.DBConfig{}) {
+		dbOptions = store.DefaultDBConfig()
+	}
+
+	db, err := store.ConnectWithConfig(
+		config.Username,
+		config.Password,
+		config.Address,
+		config.Port,
+		config.Name,
+		dbOptions,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%q: %w", "failed to connect database", err)
+	}
+
+	st, err := store.NewStore(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("%q: %w", "failed to initialize store", err)
+	}
+
+	return st, nil
+}
 
 // endregion helpers
 // region API
@@ -81,7 +115,13 @@ func NewApp(config Config, staticFS fs.FS, templatesFS fs.FS, funcs template.Fun
 		return nil, fmt.Errorf("%q: %w", "failed to initialize views", err)
 	}
 
+	st, err := initializeStore(config.Database)
+	if err != nil {
+		return nil, err
+	}
+
 	app := &application{
+		store:  st,
 		views:  views,
 		static: staticFiles,
 
@@ -92,17 +132,27 @@ func NewApp(config Config, staticFS fs.FS, templatesFS fs.FS, funcs template.Fun
 		middlewares:   []registeredMiddleware{},
 	}
 
-	app.handler = handlers.NewHandler(
-		app.store,
-		app.email,
-		app.views,
-		http.HandlerFunc(app.InternalServerError),
-	)
+	app.HandleFunc("GET /register", app.RegisterPage)
+	app.HandleFunc("POST /register", app.Register)
+	app.HandleFunc("GET /login", app.LoginPage)
+	app.HandleFunc("POST /login", app.Login)
+	app.HandleFunc("POST /logout", app.Logout)
+	app.HandleFunc("GET /user/home", app.UserHome)
 
-	if err := app.Middleware("allow-methods", func(app *application) Middleware {
-		return Middleware(middleware.NewAllowedMethods(app.MethodNotAllowed))
-	}); err != nil {
-		return nil, err
+	for _, middleware := range []struct {
+		name string
+		fn   func(http.Handler) http.Handler
+	}{
+		{name: "csrf", fn: app.CSRF},
+		{name: "validate-session", fn: app.ValidateSession},
+		{name: "session", fn: app.Session},
+		{name: "allow-methods", fn: app.AllowedMethods},
+	} {
+		if err := app.Middleware(middleware.name, func(*application) Middleware {
+			return Middleware(middleware.fn)
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	return app, nil
@@ -139,6 +189,16 @@ func (a *application) Handle(pattern string, handler http.Handler) {
 
 func (a *application) HandleFunc(pattern string, handler http.HandlerFunc) {
 	a.mux.HandleFunc(pattern, handler)
+}
+
+func (a *application) CreateChain(middlewares ...Middleware) Middleware {
+	return func(handler http.Handler) http.Handler {
+		for _, middleware := range slices.Backward(middlewares) {
+			handler = middleware(handler)
+		}
+
+		return handler
+	}
 }
 
 func (a *application) Middleware(
