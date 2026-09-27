@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 
 	"github.com/zeldojov/zexgo/internal/session"
@@ -211,20 +210,13 @@ func (a *application) UserHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _ = fmt.Fprintf(w, `
-<!DOCTYPE html>
-<html>
-<head>
-	<title>User Home</title>
-</head>
-<body>
-	<h1>Welcome, %s!</h1>
-
-	<form action="/logout" method="POST">
-		<input type="hidden" name="csrf_token" value="%s">
-		<button type="submit">Logout</button>
-	</form>
-</body>
-</html>
-`, foundUser.Username(), sess.CSRFToken())
+	a.RenderStatus(w, http.StatusOK, "auth/home", struct {
+		Title     string
+		Username  string
+		CSRFToken string
+	}{
+		Title:     "User Home",
+		Username:  foundUser.Username(),
+		CSRFToken: sess.CSRFToken(),
+	})
 }
